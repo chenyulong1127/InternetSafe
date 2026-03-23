@@ -199,7 +199,14 @@ class WindowsUsernameDictGenerator:
             生成的密码集合
         """
         all_passwords = set()
+        basic_passwords = set()
         
+        # 第一步：收集所有基础变体（纯用户名及其简单变体）
+        for username in usernames:
+            basic_variations = self.generate_basic_variations(username)
+            basic_passwords.update(basic_variations)
+        
+        # 第二步：生成完整密码字典
         for username in usernames:
             all_passwords.update(self.generate_basic_variations(username))
             all_passwords.update(self.generate_with_numbers(username))
@@ -210,35 +217,50 @@ class WindowsUsernameDictGenerator:
         
         # 移除空字符串和过短的密码
         all_passwords = {pwd for pwd in all_passwords if pwd and len(pwd) >= 4}
+        basic_passwords = {pwd for pwd in basic_passwords if pwd and len(pwd) >= 4}
         
-        # 如果已有足够密码，直接返回或截取
-        if target_count and len(all_passwords) >= target_count:
-            all_passwords = set(list(all_passwords)[:target_count])
+        # 确保所有基础密码都被包含
+        final_passwords = list(basic_passwords)
         
-        # 如果不足，生成更多变体
-        if target_count and len(all_passwords) < target_count:
-            # 生成额外用户名变体
-            extra_usernames = []
-            for username in usernames:
-                extra_usernames.extend([
-                    username + username,
-                    username * 2,
-                    username + username[::-1],
-                ])
-                for num in range(1000):
-                    extra_usernames.append(f"{username}{num:03d}")
-                    extra_usernames.append(f"{num:03d}{username}")
+        # 添加其他密码（排除已包含的基础密码）
+        for pwd in all_passwords:
+            if pwd not in basic_passwords:
+                final_passwords.append(pwd)
+        
+        # 如果指定了目标数量
+        if target_count:
+            # 如果不足，生成更多变体
+            if len(final_passwords) < target_count:
+                extra_usernames = []
+                for username in usernames:
+                    extra_usernames.extend([
+                        username + username,
+                        username * 2,
+                        username + username[::-1],
+                    ])
+                    for num in range(1000):
+                        extra_usernames.append(f"{username}{num:03d}")
+                        extra_usernames.append(f"{num:03d}{username}")
+                
+                for username in extra_usernames:
+                    if len(final_passwords) >= target_count:
+                        break
+                    basic_variations = self.generate_basic_variations(username)
+                    for pwd in basic_variations:
+                        if pwd not in final_passwords and len(pwd) >= 4:
+                            final_passwords.append(pwd)
+                    
+                    number_variations = self.generate_with_numbers(username)
+                    for pwd in number_variations:
+                        if pwd not in final_passwords and len(pwd) >= 4:
+                            final_passwords.append(pwd)
             
-            for username in extra_usernames:
-                if len(all_passwords) >= target_count:
-                    break
-                all_passwords.update(self.generate_basic_variations(username))
-                all_passwords.update(self.generate_with_numbers(username))
-                all_passwords.update(self.generate_with_special_chars(username))
-            
-            # 最终截取目标数量
-            if len(all_passwords) > target_count:
-                all_passwords = set(list(all_passwords)[:target_count])
+            # 截取到目标数量（但保留所有基础密码）
+            if len(final_passwords) > target_count:
+                # 确保基础密码在前
+                final_passwords = final_passwords[:target_count]
+        
+        all_passwords = set(final_passwords)
         
         # 保存到文件
         if output_file:
@@ -246,6 +268,7 @@ class WindowsUsernameDictGenerator:
                 for pwd in sorted(all_passwords):
                     f.write(pwd + '\n')
             print(f"已生成 {len(all_passwords)} 个唯一密码并保存到 {output_file}")
+            print(f"其中基础用户名变体：{len(basic_passwords)} 个")
         else:
             print(f"共生成 {len(all_passwords)} 个唯一密码")
         
